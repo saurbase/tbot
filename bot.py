@@ -1,7 +1,6 @@
 import os
 import time
 import logging
-import asyncio
 import hmac
 import hashlib
 import csv
@@ -9,10 +8,6 @@ import json
 import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from telegram import Bot
-import nest_asyncio
-
-nest_asyncio.apply()
 load_dotenv()
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -68,7 +63,7 @@ MAX_CANDLES_HELD   = int(os.getenv("MAX_CANDLES_HELD", 15))
 
 TRADE_LOG_FILE     = os.getenv("TRADE_LOG_FILE", "trade_log.csv")
 
-tg_bot = Bot(token=TG_TOKEN) if TG_TOKEN else None
+# Telegram messages are sent with requests to avoid async event-loop/pool issues in Docker.
 
 # Runtime risk state
 daily_realized_pnl = 0.0
@@ -82,12 +77,16 @@ account_balance = float(os.getenv("ACCOUNT_BALANCE_USDT", INVEST_USDT * 10))
 # ──────────────────────────────────────────────────────────────────────────────
 
 def notify(msg: str) -> None:
-    if not tg_bot or not TG_CHAT_ID:
+    if not TG_TOKEN or not TG_CHAT_ID:
         return
     try:
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(tg_bot.send_message(chat_id=TG_CHAT_ID, text=msg))
-        loop.close()
+        r = requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT_ID, "text": msg},
+            timeout=10,
+        )
+        if not r.ok:
+            log.error(f"Telegram error: {r.status_code} {r.text[:500]}")
     except Exception as e:
         log.error(f"Telegram error: {e}")
 
@@ -384,30 +383,55 @@ def get_signal_snapshot() -> dict:
         long_trend_ok = higher_trend == "BULLISH" or ALLOW_COUNTER_TREND
         short_trend_ok = higher_trend == "BEARISH" or ALLOW_COUNTER_TREND
 
-        if long_score >= MIN_SIGNAL_SCORE and long_trend_ok:
+        long_valid = long_score >= MIN_SIGNAL_SCORE and long_trend_ok
+        short_valid = short_score >= MIN_SIGNAL_SCORE and short_trend_ok
+
+        # Choose the stronger signal. If tied, prefer the higher-timeframe trend direction.
+        if long_valid and short_valid:
+            if short_score > long_score:
+                direction = "SHORT"
+            elif long_score > short_score:
+                direction = "LONG"
+            elif higher_trend == "BEARISH":
+                direction = "SHORT"
+            elif higher_trend == "BULLISH":
+                direction = "LONG"
+            else:
+                direction = "LONG"
+
+            signal_reason = (
+                f"{direction.lower()} selected from both valid signals "
+                f"(long={long_score}, short={short_score}, trend={higher_trend})"
+            )
+
+        elif long_valid:
             direction = "LONG"
             signal_reason = (
                 "long setup confirmed"
                 if higher_trend == "BULLISH"
                 else "long setup confirmed by test-mode counter-trend override"
             )
-        elif short_score >= MIN_SIGNAL_SCORE and short_trend_ok:
+
+        elif short_valid:
             direction = "SHORT"
             signal_reason = (
                 "short setup confirmed"
                 if higher_trend == "BEARISH"
                 else "short setup confirmed by test-mode counter-trend override"
             )
+
         elif long_score >= MIN_SIGNAL_SCORE and higher_trend != "BULLISH":
             signal_reason = (
                 f"long score {long_score}, but 5m trend is {higher_trend}; "
                 "set ALLOW_COUNTER_TREND=true for demo/testnet override"
             )
+
         elif short_score >= MIN_SIGNAL_SCORE and higher_trend != "BEARISH":
             signal_reason = (
                 f"short score {short_score}, but 5m trend is {higher_trend}; "
                 "set ALLOW_COUNTER_TREND=true for demo/testnet override"
             )
+
         else:
             signal_reason = (
                 f"scores too low: long={long_score}, short={short_score}, "
@@ -588,8 +612,8 @@ def run_bot() -> None:
             trade_id = f"{SYMBOL}-{int(time.time())}"
 
             log.info(
-                "[OPEN] %s qty=%s entry=%.2f TP=%.2f SL=%.2f notional=$%.2f",
-                direction, qty, entry_price, tp_price, stop_price, notional
+                "[OPEN] %s qty=%s entry=%.2f TP=%.2f SL=%.2f notional=$%.2f reason=%s",
+                direction, qty, entry_price, tp_price, stop_price, notional, snap.get("signal_reason", "")
             )
 
             notify(
@@ -598,7 +622,8 @@ def run_bot() -> None:
                 f"TP: {tp_price:.2f}\n"
                 f"SL: {stop_price:.2f}\n"
                 f"Score: L{snap['long_score']} / S{snap['short_score']}\n"
-                f"Trend: {snap['higher_trend']} | ADX: {snap['adx14']:.2f}"
+                f"Trend: {snap['higher_trend']} | ADX: {snap['adx14']:.2f}\n"
+                f"Reason: {snap.get('signal_reason', '')}"
             )
 
             breakeven_moved = False
