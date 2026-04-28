@@ -52,6 +52,8 @@ EST_SLIPPAGE       = float(os.getenv("EST_SLIPPAGE", 0.0002))         # 0.02%
 MAX_FUNDING        = float(os.getenv("MAX_FUNDING", 0.01))            # 1%
 MIN_ADX            = float(os.getenv("MIN_ADX", 25))
 MIN_VOL_RATIO      = float(os.getenv("MIN_VOL_RATIO", 1.0))             # relaxed from 1.2 for demo/testnet
+MIN_SIGNAL_SCORE   = int(os.getenv("MIN_SIGNAL_SCORE", 3))              # use 2 for demo/testnet, 3 for safer live mode
+ALLOW_COUNTER_TREND = os.getenv("ALLOW_COUNTER_TREND", "false").lower() == "true"
 MIN_EMA_DISTANCE   = float(os.getenv("MIN_EMA_DISTANCE", 0.0002))     # 0.02%, relaxed from 0.05%
 MIN_BB_WIDTH       = float(os.getenv("MIN_BB_WIDTH", 0.0005))         # 0.05%, relaxed from 0.10%
 
@@ -379,18 +381,38 @@ def get_signal_snapshot() -> dict:
     direction = None
     signal_reason = "no setup"
     if not invalid_reasons:
-        if long_score >= 3 and higher_trend == "BULLISH":
+        long_trend_ok = higher_trend == "BULLISH" or ALLOW_COUNTER_TREND
+        short_trend_ok = higher_trend == "BEARISH" or ALLOW_COUNTER_TREND
+
+        if long_score >= MIN_SIGNAL_SCORE and long_trend_ok:
             direction = "LONG"
-            signal_reason = "long setup confirmed"
-        elif short_score >= 3 and higher_trend == "BEARISH":
+            signal_reason = (
+                "long setup confirmed"
+                if higher_trend == "BULLISH"
+                else "long setup confirmed by test-mode counter-trend override"
+            )
+        elif short_score >= MIN_SIGNAL_SCORE and short_trend_ok:
             direction = "SHORT"
-            signal_reason = "short setup confirmed"
-        elif long_score >= 3 and higher_trend != "BULLISH":
-            signal_reason = f"long score {long_score}, but 5m trend is {higher_trend}"
-        elif short_score >= 3 and higher_trend != "BEARISH":
-            signal_reason = f"short score {short_score}, but 5m trend is {higher_trend}"
+            signal_reason = (
+                "short setup confirmed"
+                if higher_trend == "BEARISH"
+                else "short setup confirmed by test-mode counter-trend override"
+            )
+        elif long_score >= MIN_SIGNAL_SCORE and higher_trend != "BULLISH":
+            signal_reason = (
+                f"long score {long_score}, but 5m trend is {higher_trend}; "
+                "set ALLOW_COUNTER_TREND=true for demo/testnet override"
+            )
+        elif short_score >= MIN_SIGNAL_SCORE and higher_trend != "BEARISH":
+            signal_reason = (
+                f"short score {short_score}, but 5m trend is {higher_trend}; "
+                "set ALLOW_COUNTER_TREND=true for demo/testnet override"
+            )
         else:
-            signal_reason = f"scores too low: long={long_score}, short={short_score}"
+            signal_reason = (
+                f"scores too low: long={long_score}, short={short_score}, "
+                f"required={MIN_SIGNAL_SCORE}"
+            )
     else:
         signal_reason = "invalid: " + ", ".join(invalid_reasons)
 
@@ -493,7 +515,11 @@ def run_bot() -> None:
     if not API_KEY or not SECRET_KEY:
         raise RuntimeError("BINANCE_API_KEY and BINANCE_SECRET_KEY are required")
 
-    log.info(f"Starting improved scalping bot | {SYMBOL} | ${INVEST_USDT} margin | {LEVERAGE}x leverage")
+    log.info(
+        f"Starting improved scalping bot | {SYMBOL} | ${INVEST_USDT} margin | "
+        f"{LEVERAGE}x leverage | min_score={MIN_SIGNAL_SCORE} | "
+        f"counter_trend={ALLOW_COUNTER_TREND}"
+    )
     set_leverage()
 
     last_reset = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -518,7 +544,7 @@ def run_bot() -> None:
             snap = get_signal_snapshot()
             log.info(
                 "[TA] price=%.2f trend=%s EMA9=%.2f EMA21=%.2f RSI=%.2f ADX=%.2f "
-                "VOL=%.2f LS=%s SS=%s invalid=%s",
+                "VOL=%.2f LS=%s SS=%s min_score=%s counter_trend=%s invalid=%s",
                 snap["price"],
                 snap["higher_trend"],
                 snap["ema9"],
@@ -528,6 +554,8 @@ def run_bot() -> None:
                 snap["vol_ratio"],
                 snap["long_score"],
                 snap["short_score"],
+                MIN_SIGNAL_SCORE,
+                ALLOW_COUNTER_TREND,
                 ",".join(snap["invalid_reasons"]) or "none",
             )
 
