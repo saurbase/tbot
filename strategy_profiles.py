@@ -315,8 +315,34 @@ def load_strategy(env: Mapping[str, str] = os.environ) -> StrategySettings:
             rsi_short_max=_env_optional_float(env, "SET_RSI_SHORT_MAX", 70.0),
             use_higher_tf_trend_filter=_env_bool(env, "SET_USE_HIGHER_TF_TREND", False),
         )
+    elif name == "sta5":
+        settings = StrategySettings(
+            name="sta5",
+            leverage=_env_int(env, "STA5_LEVERAGE", 50),
+            tp_pct=_env_float(env, "STA5_TP_PCT", 10.0),
+            sl_pct=_env_float(env, "STA5_SL_PCT", 7.0),
+            daily_profit_target_usdt=_env_optional_float(env, "STA5_DAILY_PROFIT_TARGET_USDT"),
+            breakeven_pnl_pct=_env_float(env, "STA5_BREAKEVEN_PNL_PCT", 0.0),
+            trail_start_pnl_pct=_env_float(env, "STA5_TRAIL_START_PNL_PCT", 0.0),
+            trail_lev_pct=_env_float(env, "STA5_TRAIL_LEV_PCT", 0.0),
+            early_exit_loss_pct=_env_float(env, "STA5_EARLY_EXIT_LOSS_PCT", 0.0),
+            max_candles_held=_env_int(env, "STA5_MAX_CANDLES_HELD", 20),
+            use_breakeven=_env_bool(env, "STA5_USE_BREAKEVEN", False),
+            use_trailing=_env_bool(env, "STA5_USE_TRAILING", False),
+            use_early_exit=_env_bool(env, "STA5_USE_EARLY_EXIT", False),
+            use_counter_signal_exit=_env_bool(env, "STA5_USE_COUNTER_SIGNAL_EXIT", False),
+            min_signal_score=_env_int(env, "STA5_MIN_SIGNAL_SCORE", 1),
+            confirmation_candles=_env_int(env, "STA5_CONFIRMATION_CANDLES", 0),
+            require_volume_spike=_env_bool(env, "STA5_REQUIRE_VOLUME_SPIKE", False),
+            volume_spike_ratio=_env_float(env, "STA5_MIN_VOLUME_RATIO", 1.0),
+            rsi_long_min=_env_optional_float(env, "STA5_RSI_LONG_MIN", None),
+            rsi_long_max=_env_optional_float(env, "STA5_RSI_LONG_MAX", 30.0),
+            rsi_short_min=_env_optional_float(env, "STA5_RSI_SHORT_MIN", 70.0),
+            rsi_short_max=_env_optional_float(env, "STA5_RSI_SHORT_MAX", None),
+            use_higher_tf_trend_filter=_env_bool(env, "STA5_USE_HIGHER_TF_TREND", False),
+        )
     else:
-        raise ValueError("Unsupported STRATEGY. Use sta1, sta2, sta3, sta4, or set.")
+        raise ValueError("Unsupported STRATEGY. Use sta1, sta2, sta3, sta4, sta5, or set.")
 
     settings.validate()
     return settings

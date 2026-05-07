@@ -9,6 +9,7 @@ import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from strategy_profiles import load_strategy
+from sta5_strategy import get_sta5_signal
 from db import init_db, save_account_snapshot, save_bot_log, save_trade
 load_dotenv()
 
@@ -670,7 +671,21 @@ def get_signal_snapshot() -> dict:
     signal_state = "direct"
     pending_direction = None
     pending_waited_candles = 0
-    if ACTIVE_STRATEGY.name == "sta3":
+    # sta5 strategy - RSI + candle color analysis
+    if ACTIVE_STRATEGY.name == "sta5":
+        sta5_result = get_sta5_signal(k1, rsi14)
+        direction = sta5_result["direction"]
+        signal_reason = sta5_result["signal_reason"]
+        signal_state = "sta5_signal"
+        long_score = sta5_result["score"] if direction == "LONG" else 0
+        short_score = sta5_result["score"] if direction == "SHORT" else 0
+        
+        if direction:
+            log.info(f"[STA5] Signal generated: {direction} - {signal_reason}")
+        else:
+            log.info(f"[STA5] No trade: {signal_reason}")
+
+    elif ACTIVE_STRATEGY.name == "sta3":
         closed_fast_prev = ema9_values[-3]
         closed_slow_prev = ema21_values[-3]
         closed_fast_now = closed_ema9
