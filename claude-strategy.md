@@ -11,14 +11,13 @@ This document defines the complete trading strategy for a scalping bot operating
 | Parameter | Value |
 |---|---|
 | Base investment per trade | $100 |
-| Leverage | 15x |
-| Notional position size | $1,500 |
-| Take profit (leveraged) | +5.0% |
-| Stop loss (leveraged) | −3.0% |
-| Actual TP price move needed | 0.333% |
-| Actual SL price move trigger | 0.200% |
-| Risk-to-reward ratio | 1 : 1.67 |
-| Minimum win rate to break even | 37.5% |
+| Leverage | 30x |
+| Notional position size | $3,000 |
+| Take profit price move | 100 points |
+| Stop loss price move | 100 points |
+| Approx. leveraged TP/SL | Depends on entry price; `100 / entry_price * 30` |
+| Risk-to-reward ratio | 1 : 1 |
+| Minimum win rate to break even | Above 50% before fees/slippage |
 | Target win rate | ≥ 55% |
 | Timeframe | 1-minute candles |
 
@@ -127,19 +126,19 @@ Conditions that must all be true on the **previous candle's close** before placi
 
 ### 3.3 Order Placement
 
-Immediately after the entry order fills, place the following orders simultaneously:
+Immediately after the entry order fills, calculate the following exit levels. The current bot monitors these levels and closes at market when one is reached:
 
 ```
 For a LONG trade:
-  TP limit order = entry_price * (1 + 0.00333)   # +0.333% spot = +5% leveraged
-  SL stop order  = entry_price * (1 - 0.00200)   # -0.200% spot = -3% leveraged
+  TP limit order = entry_price + 100 points
+  SL stop order  = entry_price - 100 points
 
 For a SHORT trade:
-  TP limit order = entry_price * (1 - 0.00333)   # +0.333% spot = +5% leveraged
-  SL stop order  = entry_price * (1 + 0.00200)   # -0.200% spot = -3% leveraged
+  TP limit order = entry_price - 100 points
+  SL stop order  = entry_price + 100 points
 ```
 
-**Never enter a trade without both TP and SL orders placed.**
+**Never enter a trade without both TP and SL levels calculated and logged.**
 
 ---
 
@@ -150,19 +149,19 @@ Monitor the open position on every 1-minute candle close and apply the following
 ### 4.1 Break-Even Stop
 
 ```
-if current_pnl_percent >= 2.0%:
+if current_pnl_percent >= 1.0%:
     move SL order to entry_price
-    # This ensures the trade cannot become a loss once +2% is reached
+    # This ensures the trade cannot become a loss once momentum confirms
 ```
 
 ### 4.2 Trailing Stop Activation
 
 ```
-if current_pnl_percent >= 3.5%:
+if current_pnl_percent >= 2.0%:
     cancel fixed SL order
-    activate trailing stop with trail = 1.5% below running high (long)
-                                or     1.5% above running low  (short)
-    # This locks in a minimum of +2% profit while allowing the trade to run
+    activate trailing stop with trail = 0.75% leveraged below running high (long)
+                                or     0.75% leveraged above running low  (short)
+    # This protects a small scalp while allowing the trade to run
 ```
 
 ### 4.3 Counter-Signal Exit
@@ -180,7 +179,7 @@ if in_short_position:
 ### 4.4 Time-Based Exit
 
 ```
-if candles_since_entry >= 15:
+if candles_since_entry >= 10:
     close position at market immediately
     # Stale scalping trades indicate the move did not materialise
     # Holding longer ties up capital and increases risk
@@ -194,11 +193,11 @@ The bot exits an open trade when the **first** of these conditions is met:
 
 | Priority | Condition | Action |
 |---|---|---|
-| 1 | TP limit order fills | Trade closed at +5% profit |
-| 2 | SL stop order fills | Trade closed at −3% loss |
+| 1 | TP limit order fills | Trade closed after a 100-point favorable move |
+| 2 | SL stop order fills | Trade closed after a 100-point adverse move |
 | 3 | Trailing stop triggers | Trade closed at locked-in profit |
 | 4 | Counter-signal score ≥ 3 | Close at market |
-| 5 | Trade age ≥ 15 candles | Close at market |
+| 5 | Trade age ≥ 10 candles | Close at market |
 
 ---
 
@@ -213,7 +212,7 @@ if cumulative_daily_pnl <= -6.0%:
     resume only at start of next session
 ```
 
-With 15x leverage, two consecutive stop-losses produce approximately −6% on the account. The circuit breaker prevents catastrophic drawdown from bad market conditions or signal failures.
+With 30x leverage, a 100-point stop produces leveraged PnL of roughly `100 / entry_price * 30`. The circuit breaker prevents catastrophic drawdown from bad market conditions or signal failures.
 
 ### 6.2 Consecutive Loss Pause
 
@@ -322,31 +321,31 @@ ON EVERY 1-MINUTE CANDLE CLOSE:
 
   # --- entry ---
   if long_score >= 3 and not in_position:
-    entry = open_long($100, leverage=15)
-    place_tp(entry * 1.00333)
-    place_sl(entry * 0.99800)
+    entry = open_long($100, leverage=30)
+    place_tp(entry + 100)
+    place_sl(entry - 100)
     start_timer()
 
   if short_score >= 3 and not in_position:
-    entry = open_short($100, leverage=15)
-    place_tp(entry * 0.99667)
-    place_sl(entry * 1.00200)
+    entry = open_short($100, leverage=30)
+    place_tp(entry - 100)
+    place_sl(entry + 100)
     start_timer()
 
   # --- in-trade management ---
   if in_position:
     pnl = get_current_pnl_percent()
 
-    if pnl >= 2.0:
+    if pnl >= 1.0:
       move_sl_to_breakeven()
 
-    if pnl >= 3.5:
-      activate_trailing_stop(trail_percent=1.5)
+    if pnl >= 2.0:
+      activate_trailing_stop(trail_percent=0.75)
 
     if (in_long and short_score >= 3) or (in_short and long_score >= 3):
       close_at_market(reason="COUNTER_SIGNAL")
 
-    if candles_open >= 15:
+    if candles_open >= 10:
       close_at_market(reason="TIME_BASED")
 
   # --- log trade on close ---
@@ -363,10 +362,10 @@ ON EVERY 1-MINUTE CANDLE CLOSE:
 ```
 DO:
   Enter only when score >= 3
-  Always set TP and SL before considering entry confirmed
-  Move SL to breakeven at +2%
-  Activate trailing stop at +3.5%
-  Exit after 15 candles if neither TP nor SL has triggered
+  Always calculate TP and SL before considering entry confirmed
+  Move SL to breakeven at +1%
+  Activate trailing stop at +2%
+  Exit after 10 candles if neither TP nor SL has triggered
   Halt after -6% daily loss
   Pause 10 minutes after 3 consecutive losses
   Log every trade with full details
@@ -374,7 +373,7 @@ DO:
 
 DO NOT:
   Trade with a score below 3
-  Enter without both TP and SL orders placed
+  Enter without both TP and SL levels calculated
   Open more than one trade at a time
   Remove the SL order once placed
   Trade during news events or low liquidity
@@ -385,5 +384,5 @@ DO NOT:
 
 ---
 
-*Strategy version: 1.0 — 15x leverage scalping — 1-min timeframe*
-*Parameters: $100 base · 5% TP · 3% SL · min 3-signal confluence*
+*Strategy version: 1.1 - 30x 100-point scalping - 1-min timeframe*
+*Parameters: $100 base - 100-point TP - 100-point SL - min 3-signal confluence*

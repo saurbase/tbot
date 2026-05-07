@@ -1,5 +1,5 @@
 """
-Claude Strategy - 15x Leverage Scalping Strategy
+Claude Strategy - 30x Leverage 100-Point Scalping Strategy
 Implements the complete trading strategy from claude-strategy.md
 """
 
@@ -8,26 +8,26 @@ from typing import Dict, Optional, Tuple
 
 
 class ClaudeStrategy:
-    """15x Leverage Scalping Strategy based on claude-strategy.md"""
+    """30x leverage scalping strategy based on 100-point price moves."""
 
     # Core parameters
     BASE_INVESTMENT = 100  # $100 per trade
-    LEVERAGE = 15
-    NOTIONAL_SIZE = 1500  # $1,500
+    LEVERAGE = 30
+    NOTIONAL_SIZE = 3000  # $3,000
 
-    # TP/SL (leveraged)
-    TP_LEVERAGED = 0.05  # +5.0%
-    SL_LEVERAGED = -0.03  # -3.0%
+    # TP/SL in literal symbol price points.
+    TP_POINTS = 100.0
+    SL_POINTS = 100.0
 
-    # Actual price moves needed
-    TP_PRICE_MOVE = 0.00333  # 0.333%
-    SL_PRICE_MOVE = 0.00200  # 0.200%
+    # Position management thresholds use leveraged PnL percentages.
+    BREAKEVEN_LEVERAGED_PCT = 1.0
+    TRAIL_START_LEVERAGED_PCT = 2.0
 
     # Risk management
     DAILY_CIRCUIT_BREAKER = -0.06  # -6%
     MAX_CONSEC_LOSSES = 3
     MAX_DAILY_TRADES = 20
-    MAX_TRADE_CANDLES = 15
+    MAX_TRADE_CANDLES = 10
 
     # Signal scoring
     MIN_SCORE = 3
@@ -299,11 +299,11 @@ class ClaudeStrategy:
     def calculate_tp_sl(self, entry_price: float, direction: str) -> Tuple[float, float]:
         """Calculate take profit and stop loss prices"""
         if direction == 'LONG':
-            tp_price = entry_price * (1 + self.TP_PRICE_MOVE)
-            sl_price = entry_price * (1 - self.SL_PRICE_MOVE)
+            tp_price = entry_price + self.TP_POINTS
+            sl_price = entry_price - self.SL_POINTS
         else:  # SHORT
-            tp_price = entry_price * (1 - self.TP_PRICE_MOVE)
-            sl_price = entry_price * (1 + self.SL_PRICE_MOVE)
+            tp_price = entry_price - self.TP_POINTS
+            sl_price = entry_price + self.SL_POINTS
 
         return round(tp_price, 2), round(sl_price, 2)
 
@@ -318,29 +318,29 @@ class ClaudeStrategy:
         else:  # SHORT
             pnl_pct = (entry_price - current_price) / entry_price
 
-        pnl_pct *= 100  # Convert to percentage
+        pnl_pct *= self.LEVERAGE * 100
 
         # Check TP
-        if direction == 'LONG' and current_price >= entry_price * (1 + self.TP_PRICE_MOVE):
+        if direction == 'LONG' and current_price >= entry_price + self.TP_POINTS:
             return 'TP', current_price
-        elif direction == 'SHORT' and current_price <= entry_price * (1 - self.TP_PRICE_MOVE):
+        elif direction == 'SHORT' and current_price <= entry_price - self.TP_POINTS:
             return 'TP', current_price
 
         # Check SL
-        if direction == 'LONG' and current_price <= entry_price * (1 - self.SL_PRICE_MOVE):
+        if direction == 'LONG' and current_price <= entry_price - self.SL_POINTS:
             return 'SL', current_price
-        elif direction == 'SHORT' and current_price >= entry_price * (1 + self.SL_PRICE_MOVE):
+        elif direction == 'SHORT' and current_price >= entry_price + self.SL_POINTS:
             return 'SL', current_price
 
-        # Break-even stop at +2%
-        if pnl_pct >= 2.0:
+        # Break-even stop after the scalp has moved in favor.
+        if pnl_pct >= self.BREAKEVEN_LEVERAGED_PCT:
             if direction == 'LONG' and current_price <= entry_price:
                 return 'BREAKEVEN', entry_price
             elif direction == 'SHORT' and current_price >= entry_price:
                 return 'BREAKEVEN', entry_price
 
-        # Trailing stop at +3.5%
-        if pnl_pct >= 3.5:
+        # Trailing stop after meaningful leveraged profit.
+        if pnl_pct >= self.TRAIL_START_LEVERAGED_PCT:
             # This would need running high/low tracking - simplified here
             pass
 
@@ -358,8 +358,8 @@ class ClaudeStrategy:
             'quantity': quantity,
             'entry_time': None,  # Would use actual timestamp
             'candles_open': 0,
-            'tp_price': entry_price * (1 + self.TP_PRICE_MOVE) if direction == 'LONG' else entry_price * (1 - self.TP_PRICE_MOVE),
-            'sl_price': entry_price * (1 - self.SL_PRICE_MOVE) if direction == 'LONG' else entry_price * (1 + self.SL_PRICE_MOVE)
+            'tp_price': entry_price + self.TP_POINTS if direction == 'LONG' else entry_price - self.TP_POINTS,
+            'sl_price': entry_price - self.SL_POINTS if direction == 'LONG' else entry_price + self.SL_POINTS
         }
 
     def close_position(self, exit_price: float, reason: str):

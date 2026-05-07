@@ -1,28 +1,46 @@
-Below is a **safer training blueprint** for your scalping bot. I would **not** train it to expect 5% profit every trade; with **15x leverage**, fees, spread, slippage, funding, and liquidation risk can quickly destroy the account. Futures/perpetual trading has substantial loss risk, including total loss, and funding/fees matter on every trade. ([eCFR][1])
+Below is a **safer training blueprint** for your scalping bot. I would **not** train it to expect 5% profit every trade; with **30x leverage**, fees, spread, slippage, funding, and liquidation risk can quickly destroy the account. Futures/perpetual trading has substantial loss risk, including total loss, and funding/fees matter on every trade. ([eCFR][1])
 
-## Bot Strategy: 15x Scalping Long/Short
+## Bot Strategy: 30x 100-Point Scalping Long/Short
+
+## Strategy Selection
+
+Set `STRATEGY=sta1` or `STRATEGY=sta2` in `.env`.
+
+```text
+sta1:
+  Current 30x strategy.
+  Uses fixed 100-point TP and 100-point SL.
+
+sta2:
+  30x scalping strategy for markets with movement between 50 and 200 points.
+  Uses recent high-low range by default for the movement filter.
+  Closes the active trade when unrealized PnL reaches $10.00 by default.
+  Uses a $2.50 gross stop per trade.
+  Stops opening new trades after $10.00 gross realized PnL for the UTC day.
+```
 
 ### 1. Core rules
 
 **Capital per trade:** $100 margin
-**Leverage:** 15x
-**Position size:** $1,500 notional
+**Leverage:** 30x
+**Position size:** $3,000 notional
 **Stop loss:** 3% on margin risk is too vague. Use price-based stop instead.
 
-With 15x leverage:
+With 30x leverage:
 
 ```text
-1% market move = ~15% gain/loss on margin before fees
-3% market move against you = ~45% loss on margin before fees
+1% market move = ~30% gain/loss on margin before fees
+100 BTCUSDT points at a 100,000 entry = ~3% gain/loss on margin before fees
 ```
 
 So a true **3% price stop** is very dangerous. Better:
 
 ```text
 Max loss per trade: 1% to 2% of total account
-Stop distance: 0.20% to 0.50% price move
-Take profit 1: 0.30% to 0.60%
-Take profit 2: trailing stop
+Stop distance: 100 points
+Take profit: 100 points
+Move stop to breakeven once leveraged PnL reaches +1%
+Trail after leveraged PnL reaches +2%
 ```
 
 ## 2. Entry conditions
@@ -62,11 +80,11 @@ No major news event
 Use partial profit-taking:
 
 ```text
-Take Profit 1: close 50% at +0.35% price move
-Move stop loss to breakeven
-Take Profit 2: trail remaining 50% using ATR or EMA 9
+Take Profit: close at a 100-point favorable move
+Move stop loss to breakeven after +1% leveraged PnL
+Trail after +2% leveraged PnL
 Hard exit if opposite signal appears
-Hard exit after 10–20 candles if no momentum
+Hard exit after 10 candles if no momentum
 ```
 
 Do **not** keep every trade running forever. For scalping, stale trades usually become bad trades.
@@ -103,8 +121,9 @@ def scalping_strategy(data, account_balance):
 
     max_risk_per_trade = account_balance * 0.01
     margin_per_trade = 100
-    leverage = 15
+    leverage = 30
     position_notional = margin_per_trade * leverage
+    scalp_points = 100
 
     if daily_loss_exceeded():
         return "NO_TRADE"
@@ -135,8 +154,8 @@ def scalping_strategy(data, account_balance):
         and funding_ok
     )
 
-    stop_distance = max(atr[-1] * 0.8, price * 0.0025)
-    take_profit_1 = price * 0.0035
+    stop_distance = scalp_points
+    take_profit = scalp_points
 
     if long_signal:
         return {
@@ -144,8 +163,8 @@ def scalping_strategy(data, account_balance):
             "margin": margin_per_trade,
             "leverage": leverage,
             "stop_loss": price - stop_distance,
-            "take_profit_1": price + take_profit_1,
-            "trailing_stop": "EMA9 or ATR"
+            "take_profit": price + take_profit,
+            "trailing_stop": "after +2% leveraged PnL"
         }
 
     if short_signal:
@@ -154,8 +173,8 @@ def scalping_strategy(data, account_balance):
             "margin": margin_per_trade,
             "leverage": leverage,
             "stop_loss": price + stop_distance,
-            "take_profit_1": price - take_profit_1,
-            "trailing_stop": "EMA9 or ATR"
+            "take_profit": price - take_profit,
+            "trailing_stop": "after +2% leveraged PnL"
         }
 
     return "NO_TRADE"
@@ -177,9 +196,9 @@ Strategy survives fees, slippage, and funding
 ## Best version of your idea
 
 ```text
-Use 15x leverage only when trend, momentum, volume, and spread all agree.
-Target small price moves, not 5% every trade.
-Take partial profit quickly.
+Use 30x leverage only when trend, momentum, volume, and spread all agree.
+Target 100-point price moves, not 5% every trade.
+Take profit quickly.
 Move stop to breakeven.
 Trail winners.
 Stop trading after daily loss limit.

@@ -1,10 +1,31 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trading-bot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tradingbot}
+      POSTGRES_USER: ${POSTGRES_USER:-tradingbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tradingbot_change_me}
+    volumes:
+      - trading_bot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tradingbot} -d ${POSTGRES_DB:-tradingbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   trading-bot:
     build: .
     container_name: binance-scalping-bot
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tradingbot:tradingbot_change_me@postgres:5432/tradingbot}
+    depends_on:
+      postgres:
+        condition: service_healthy
     mem_limit: 512m
     memswap_limit: 512m
     logging:
@@ -12,3 +33,26 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  dashboard:
+    build: .
+    container_name: trading-bot-dashboard
+    restart: unless-stopped
+    command: ["uvicorn", "dashboard:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tradingbot:tradingbot_change_me@postgres:5432/tradingbot}
+    ports:
+      - "${DASHBOARD_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 512m
+    memswap_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  trading_bot_pgdata:
