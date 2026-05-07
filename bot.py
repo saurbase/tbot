@@ -673,7 +673,7 @@ def get_signal_snapshot() -> dict:
     pending_waited_candles = 0
     # sta5 strategy - RSI + candle color analysis
     if ACTIVE_STRATEGY.name == "sta5":
-        sta5_result = get_sta5_signal(k1, rsi14)
+        sta5_result = get_sta5_signal(k1)
         direction = sta5_result["direction"]
         signal_reason = sta5_result["signal_reason"]
         signal_state = "sta5_signal"
