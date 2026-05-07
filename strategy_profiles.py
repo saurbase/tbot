@@ -335,10 +335,10 @@ def load_strategy(env: Mapping[str, str] = os.environ) -> StrategySettings:
             confirmation_candles=_env_int(env, "STA5_CONFIRMATION_CANDLES", 0),
             require_volume_spike=_env_bool(env, "STA5_REQUIRE_VOLUME_SPIKE", False),
             volume_spike_ratio=_env_float(env, "STA5_MIN_VOLUME_RATIO", 1.0),
-            rsi_long_min=_env_optional_float(env, "STA5_RSI_LONG_MIN", None),
-            rsi_long_max=_env_optional_float(env, "STA5_RSI_LONG_MAX", 30.0),
-            rsi_short_min=_env_optional_float(env, "STA5_RSI_SHORT_MIN", 70.0),
-            rsi_short_max=_env_optional_float(env, "STA5_RSI_SHORT_MAX", None),
+            rsi_long_min=_env_optional_float(env, "STA5_RSI_LONG_MIN"),
+            rsi_long_max=_env_optional_float(env, "STA5_RSI_LONG_MAX"),
+            rsi_short_min=_env_optional_float(env, "STA5_RSI_SHORT_MIN"),
+            rsi_short_max=_env_optional_float(env, "STA5_RSI_SHORT_MAX"),
             use_higher_tf_trend_filter=_env_bool(env, "STA5_USE_HIGHER_TF_TREND", False),
         )
     else:
