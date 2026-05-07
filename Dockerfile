@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py dashboard.py db.py strategy_profiles.py .
+COPY bot.py dashboard.py db.py strategy_profiles.py sta5_strategy.py .
 
 CMD ["python", "-u", "bot.py"]
